@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TRACE UAV - CO2 Monitor</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700&family=Barlow:wght@300;400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:        #0a0c0f;
+  --panel:     #0f1318;
+  --border:    #1e2730;
+  --border2:   #2a3540;
+  --text:      #c8d8e8;
+  --muted:     #4a6070;
+  --dim:       #2a3a48;
+  --green:     #00e5a0;
+  --green-dim: rgba(0,229,160,0.08);
+  --amber:     #f5a623;
+  --amber-dim: rgba(245,166,35,0.1);
+  --red:       #ff4757;
+  --red-dim:   rgba(255,71,87,0.1);
+  --blue:      #38b6ff;
+  --blue-dim:  rgba(56,182,255,0.08);
+  --mono:      'Share Tech Mono', monospace;
+  --cond:      'Barlow Condensed', sans-serif;
+  --body:      'Barlow', sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--body);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* scan-line texture */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.08) 2px,
+    rgba(0,0,0,0.08) 4px
+  );
+  pointer-events: none;
+  z-index: 100;
+}
+
+/* corner bracket decoration */
+.bracket::before,
+.bracket::after {
+  content: '';
+  position: absolute;
+  width: 12px; height: 12px;
+  border-color: var(--green);
+  border-style: solid;
+  opacity: 0.5;
+}
+.bracket::before { top: 0; left: 0; border-width: 1px 0 0 1px; }
+.bracket::after  { bottom: 0; right: 0; border-width: 0 1px 1px 0; }
+
+.wrap {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+
+header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 40px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.logo-block {}
+.logo-top {
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: 2.6rem;
+  letter-spacing: 0.12em;
+  color: var(--green);
+  line-height: 1;
+  text-transform: uppercase;
+}
+.logo-sub {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--muted);
+  letter-spacing: 0.18em;
+  margin-top: 6px;
+  text-transform: uppercase;
+}
+
+.header-right {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  color: var(--green);
+  border: 1px solid rgba(0,229,160,0.25);
+  border-radius: 2px;
+  padding: 5px 12px;
+  text-transform: uppercase;
+}
+.live-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: blink 1.4s ease-in-out infinite;
+}
+@keyframes blink {
+  0%,100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+.system-controls {
+  display: flex;
+  gap: 8px;
+}
+.ctrl-btn {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 5px 12px;
+  border-radius: 2px;
+  cursor: pointer;
+  border: 1px solid var(--border2);
+  background: transparent;
+  color: var(--muted);
+  transition: all 0.15s;
+}
+.ctrl-btn:hover { border-color: var(--green); color: var(--green); }
+.ctrl-btn.active { background: var(--green-dim); border-color: var(--green); color: var(--green); }
+.ctrl-btn.danger:hover { border-color: var(--red); color: var(--red); }
+.ctrl-btn.danger.active { background: var(--red-dim); border-color: var(--red); color: var(--red); }
+
+#alert-banner {
+  display: none;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 20px;
+  margin-bottom: 28px;
+  border-left: 3px solid var(--red);
+  background: var(--red-dim);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  color: var(--red);
+  animation: slideIn 0.3s ease;
+}
+#alert-banner.visible { display: flex; }
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.alert-tag {
+  font-size: 0.58rem;
+  letter-spacing: 0.15em;
+  border: 1px solid var(--red);
+  padding: 2px 8px;
+  flex-shrink: 0;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 28px;
+}
+@media (max-width: 640px) { .cards { grid-template-columns: 1fr; } }
+
+.card {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 24px 22px 20px;
+  transition: border-color 0.2s;
+  overflow: hidden;
+}
+.card:hover { border-color: var(--border2); }
+.card.warn  { border-color: rgba(245,166,35,0.4); }
+.card.danger { border-color: rgba(255,71,87,0.5); }
+
+/* top-right label chip */
+.card-tag {
+  position: absolute;
+  top: 14px; right: 14px;
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  padding: 2px 7px;
+}
+
+.card-label {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.card-value {
+  font-family: var(--cond);
+  font-size: 3.4rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text);
+  transition: color 0.3s;
+  letter-spacing: -0.01em;
+}
+.card-value.warn   { color: var(--amber); }
+.card-value.danger { color: var(--red); }
+
+.card-unit {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 300;
+  color: var(--muted);
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.card-sub {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  color: var(--muted);
+  margin-top: 10px;
+  letter-spacing: 0.05em;
+}
+.card-sub.warn   { color: var(--amber); }
+.card-sub.danger { color: var(--red); }
+
+.bar-track {
+  height: 2px;
+  background: var(--dim);
+  margin-top: 18px;
+  overflow: hidden;
+}
+.bar-fill {
+  height: 100%;
+  transition: width 0.9s cubic-bezier(0.4,0,0.2,1), background 0.4s;
+}
+.bar-co2     { background: var(--green); }
+.bar-co2.warn   { background: var(--amber); }
+.bar-co2.danger { background: var(--red); }
+.bar-gas     { background: var(--blue); }
+.bar-voltage { background: var(--amber); }
+
+/* corner brackets on cards */
+.card::before, .card::after {
+  content: '';
+  position: absolute;
+  width: 10px; height: 10px;
+  border-color: var(--border2);
+  border-style: solid;
+}
+.card::before { top: 0; left: 0; border-width: 1px 0 0 1px; }
+.card::after  { bottom: 0; right: 0; border-width: 0 1px 1px 0; }
+
+/* ── STATUS ROW ── */
+.status-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 28px;
+}
+@media (max-width: 640px) { .status-row { grid-template-columns: repeat(2,1fr); } }
+
+.status-cell {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 12px 16px;
+}
+.status-cell-label {
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.status-cell-val {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--text);
+}
+.status-cell-val.on  { color: var(--green); }
+.status-cell-val.off { color: var(--red); }
+
+/* ── CHART ── */
+.chart-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 22px 22px 18px;
+  margin-bottom: 28px;
+  position: relative;
+}
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+}
+.chart-title {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.chart-tabs {
+  display: flex;
+  gap: 4px;
+}
+.tab {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 1px;
+  transition: all 0.15s;
+}
+.tab:hover, .tab.active {
+  border-color: var(--green);
+  color: var(--green);
+  background: var(--green-dim);
+}
+.chart-container { height: 160px; position: relative; }
+canvas { width: 100% !important; height: 100% !important; }
+
+/* ── THRESHOLDS ── */
+.thresh-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 22px;
+  margin-bottom: 28px;
+}
+.thresh-title {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 18px;
+}
+.thresh-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.thresh-label {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--muted);
+  min-width: 160px;
+  letter-spacing: 0.04em;
+}
+.thresh-input {
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  padding: 6px 12px;
+  width: 100px;
+  border-radius: 0;
+  transition: border-color 0.15s;
+}
+.thresh-input:focus { outline: none; border-color: var(--green); }
+.thresh-badge {
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border: 1px solid;
+}
+.badge-warn   { border-color: rgba(245,166,35,0.4); color: var(--amber); }
+.badge-danger { border-color: rgba(255,71,87,0.4);  color: var(--red); }
+
+/* ── FOOTER ── */
+footer {
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.2em;
+  color: var(--dim);
+  text-align: center;
+  margin-top: 40px;
+  text-transform: uppercase;
+}
+
+/* ── LAST PHOTO ── */
+.photo-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 22px;
+  margin-bottom: 28px;
+}
+.photo-header {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+#alert-photo {
+  max-width: 100%;
+  border: 1px solid var(--border2);
+  display: none;
+}
+#no-photo {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--dim);
+  letter-spacing: 0.08em;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo-block">
+      <div class="logo-top">TRACE</div>
+      <div class="logo-sub">UAV Atmospheric CO₂ Monitor &nbsp;·&nbsp; GWU IoT</div>
+    </div>
+    <div class="header-right">
+      <div class="live-pill">
+        <span class="live-dot"></span>
+        <span id="last-updated">connecting...</span>
+      </div>
+      <div class="system-controls">
+        <button class="ctrl-btn active" id="btn-sys-on"  onclick="systemOn()">SYS ON</button>
+        <button class="ctrl-btn danger" id="btn-sys-off" onclick="systemOff()">SYS OFF</button>
+        <button class="ctrl-btn active" id="btn-log-on"  onclick="logOn()">LOG ON</button>
+        <button class="ctrl-btn danger" id="btn-log-off" onclick="logOff()">LOG OFF</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ALERT BANNER -->
+  <div id="alert-banner">
+    <span class="alert-tag">ALERT</span>
+    <span id="alert-text"></span>
+  </div>
+
+  <!-- METRIC CARDS -->
+  <div class="cards">
+    <div class="card" id="card-co2">
+      <div class="card-tag">CH0 · A0</div>
+      <div class="card-label">CO₂ estimate</div>
+      <div class="card-value" id="co2-val">--<span class="card-unit">ppm</span></div>
+      <div class="card-sub" id="co2-sub">awaiting data</div>
+      <div class="bar-track"><div class="bar-fill bar-co2" id="co2-bar" style="width:0%"></div></div>
+    </div>
+    <div class="card" id="card-gas">
+      <div class="card-tag">MQ-135</div>
+      <div class="card-label">Noxious gas index</div>
+      <div class="card-value" id="gas-val">--<span class="card-unit">/ 100</span></div>
+      <div class="card-sub" id="gas-sub">awaiting data</div>
+      <div class="bar-track"><div class="bar-fill bar-gas" id="gas-bar" style="width:0%"></div></div>
+    </div>
+    <div class="card" id="card-volt">
+      <div class="card-tag">ADS1115</div>
+      <div class="card-label">ADC voltage</div>
+      <div class="card-value" id="volt-val">--<span class="card-unit">V</span></div>
+      <div class="card-sub" id="volt-sub">awaiting data</div>
+      <div class="bar-track"><div class="bar-fill bar-voltage" id="volt-bar" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- STATUS ROW -->
+  <div class="status-row">
+    <div class="status-cell">
+      <div class="status-cell-label">System</div>
+      <div class="status-cell-val on" id="stat-system">ONLINE</div>
+    </div>
+    <div class="status-cell">
+      <div class="status-cell-label">Logging</div>
+      <div class="status-cell-val on" id="stat-logging">ACTIVE</div>
+    </div>
+    <div class="status-cell">
+      <div class="status-cell-label">Raw ADC</div>
+      <div class="status-cell-val" id="stat-raw">—</div>
+    </div>
+    <div class="status-cell">
+      <div class="status-cell-label">Last reading</div>
+      <div class="status-cell-val" id="stat-ts">—</div>
+    </div>
+  </div>
+
+  <!-- CHART -->
+  <div class="chart-panel">
+    <div class="chart-header">
+      <div class="chart-title">History &mdash; last 20 readings</div>
+      <div class="chart-tabs">
+        <button class="tab active" onclick="switchChart('co2', this)">CO₂</button>
+        <button class="tab" onclick="switchChart('gas', this)">Gas index</button>
+        <button class="tab" onclick="switchChart('voltage', this)">Voltage</button>
+      </div>
+    </div>
+    <div class="chart-container">
+      <canvas id="histChart"></canvas>
+    </div>
+  </div>
+
+  <!-- THRESHOLDS -->
+  <div class="thresh-panel">
+    <div class="thresh-title">Alert thresholds</div>
+    <div class="thresh-row">
+      <div class="thresh-label">CO₂ warning (ppm)</div>
+      <input class="thresh-input" id="thresh-warn" type="number" value="1000">
+      <span class="thresh-badge badge-warn">WARN</span>
+    </div>
+    <div class="thresh-row">
+      <div class="thresh-label">CO₂ danger (ppm)</div>
+      <input class="thresh-input" id="thresh-danger" type="number" value="2000">
+      <span class="thresh-badge badge-danger">DANGER</span>
+    </div>
+    <div class="thresh-row">
+      <div class="thresh-label">Gas index warning</div>
+      <input class="thresh-input" id="thresh-gas" type="number" value="60">
+      <span class="thresh-badge badge-warn">WARN</span>
+    </div>
+  </div>
+
+  <!-- LAST ALERT PHOTO -->
+  <div class="photo-panel">
+    <div class="photo-header">Last alert photo</div>
+    <span id="no-photo">No alert photo captured yet.</span>
+    <img id="alert-photo" src="" alt="Alert capture">
+  </div>
+
+  <footer>TRACE &nbsp;·&nbsp; UAV CO₂ MONITORING &nbsp;·&nbsp; RASPBERRY PI 4 &nbsp;·&nbsp; ADS1115 &nbsp;·&nbsp; MQ-135</footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+const history = { co2: [], gas: [], voltage: [], labels: [] };
+let activeChart = 'co2';
+let chart;
+let systemOn_state = true;
+let loggingOn_state = true;
+
+const chartColors = {
+  co2:     { line: '#00e5a0', fill: 'rgba(0,229,160,0.07)' },
+  gas:     { line: '#38b6ff', fill: 'rgba(56,182,255,0.07)' },
+  voltage: { line: '#f5a623', fill: 'rgba(245,166,35,0.07)' }
+};
+
+function initChart() {
+  const ctx = document.getElementById('histChart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        data: [],
+        borderColor: chartColors.co2.line,
+        backgroundColor: chartColors.co2.fill,
+        borderWidth: 1.5,
+        pointRadius: 2,
+        pointBackgroundColor: chartColors.co2.line,
+        fill: true,
+        tension: 0.35
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 300 },
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          ticks: { color: '#2a3a48', font: { family: 'Share Tech Mono', size: 9 } },
+          grid:  { color: '#0f1318' }
+        },
+        y: {
+          ticks: { color: '#2a3a48', font: { family: 'Share Tech Mono', size: 9 } },
+          grid:  { color: '#151c24' }
+        }
+      }
+    }
+  });
+}
+
+function switchChart(type, el) {
+  activeChart = type;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  updateChartDisplay();
+}
+
+function updateChartDisplay() {
+  const c = chartColors[activeChart];
+  chart.data.labels = history.labels;
+  chart.data.datasets[0].data = history[activeChart];
+  chart.data.datasets[0].borderColor = c.line;
+  chart.data.datasets[0].backgroundColor = c.fill;
+  chart.data.datasets[0].pointBackgroundColor = c.line;
+  chart.update();
+}
+
+function checkAlerts(data) {
+  const warnPpm   = parseFloat(document.getElementById('thresh-warn').value);
+  const dangerPpm = parseFloat(document.getElementById('thresh-danger').value);
+  const warnGas   = parseFloat(document.getElementById('thresh-gas').value);
+  const banner = document.getElementById('alert-banner');
+  const msgs = [];
+
+  if (data.co2_est >= dangerPpm)      msgs.push(`CO₂ DANGER: ${data.co2_est} ppm (>${dangerPpm})`);
+  else if (data.co2_est >= warnPpm)   msgs.push(`CO₂ elevated: ${data.co2_est} ppm (>${warnPpm})`);
+  if (data.noxious_gas >= warnGas)    msgs.push(`Gas index high: ${data.noxious_gas}`);
+
+  if (msgs.length) {
+    document.getElementById('alert-text').textContent = msgs.join('  ·  ');
+    banner.classList.add('visible');
+  } else {
+    banner.classList.remove('visible');
+  }
+}
+
+function updateUI(data) {
+  const warnPpm   = parseFloat(document.getElementById('thresh-warn').value);
+  const dangerPpm = parseFloat(document.getElementById('thresh-danger').value);
+  const warnGas   = parseFloat(document.getElementById('thresh-gas').value);
+
+  // CO2
+  const co2 = data.co2_est ?? 0;
+  const co2El = document.getElementById('co2-val');
+  const co2Sub = document.getElementById('co2-sub');
+  const co2Bar = document.getElementById('co2-bar');
+  co2El.innerHTML = `${co2}<span class="card-unit">ppm</span>`;
+  if (co2 >= dangerPpm) {
+    co2El.className = 'card-value danger';
+    co2Sub.textContent = 'DANGER — significant pollution';
+    co2Sub.className = 'card-sub danger';
+    co2Bar.className = 'bar-fill bar-co2 danger';
+    document.getElementById('card-co2').className = 'card danger';
+  } else if (co2 >= warnPpm) {
+    co2El.className = 'card-value warn';
+    co2Sub.textContent = 'WARNING — elevated CO₂';
+    co2Sub.className = 'card-sub warn';
+    co2Bar.className = 'bar-fill bar-co2 warn';
+    document.getElementById('card-co2').className = 'card warn';
+  } else {
+    co2El.className = 'card-value';
+    co2Sub.textContent = co2 >= 400 ? 'nominal' : 'sensor warming up';
+    co2Sub.className = 'card-sub';
+    co2Bar.className = 'bar-fill bar-co2';
+    document.getElementById('card-co2').className = 'card';
+  }
+  co2Bar.style.width = Math.min(co2 / dangerPpm * 100, 100) + '%';
+
+  // Noxious gas
+  const gas = data.noxious_gas ?? 0;
+  document.getElementById('gas-val').innerHTML = `${gas}<span class="card-unit">/ 100</span>`;
+  document.getElementById('gas-sub').textContent = gas >= warnGas ? 'elevated — check area' : 'within range';
+  document.getElementById('gas-sub').className = 'card-sub' + (gas >= warnGas ? ' warn' : '');
+  document.getElementById('gas-bar').style.width = Math.min(gas, 100) + '%';
+
+  // Voltage
+  const volt = data.voltage ?? (data.raw_adc != null ? (data.raw_adc / 32767 * 3.3).toFixed(3) : '--');
+  document.getElementById('volt-val').innerHTML = `${typeof volt === 'number' ? volt.toFixed(3) : volt}<span class="card-unit">V</span>`;
+  document.getElementById('volt-sub').textContent = `raw ADC: ${data.raw_adc ?? '—'}`;
+  document.getElementById('volt-bar').style.width = Math.min((parseFloat(volt) / 3.3) * 100, 100) + '%';
+
+  // Status row
+  document.getElementById('stat-raw').textContent = data.raw_adc ?? '—';
+  document.getElementById('stat-ts').textContent  = data.timestamp ? data.timestamp.slice(11,19) : '—';
+
+  // Last alert photo
+  if (data.photo) {
+    document.getElementById('alert-photo').src = '/photo?path=' + encodeURIComponent(data.photo);
+    document.getElementById('alert-photo').style.display = 'block';
+    document.getElementById('no-photo').style.display = 'none';
+  }
+
+  // Last updated
+  document.getElementById('last-updated').textContent = 'live · ' + new Date().toLocaleTimeString();
+
+  // History
+  const ts = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  history.co2.push(co2);
+  history.gas.push(gas);
+  history.voltage.push(parseFloat(volt) || 0);
+  history.labels.push(ts);
+  if (history.co2.length > 20) {
+    history.co2.shift(); history.gas.shift();
+    history.voltage.shift(); history.labels.shift();
+  }
+  updateChartDisplay();
+  checkAlerts(data);
+}
+
+async function fetchData() {
+  try {
+    const res = await fetch('/data');
+    const data = await res.json();
+    if (data.co2_est !== undefined) updateUI(data);
+  } catch {
+    document.getElementById('last-updated').textContent = 'connection error';
+  }
+}
+
+async function postControl(url, statEl, onText, offText, isOn) {
+  try {
+    await fetch(url, { method: 'POST' });
+    document.getElementById(statEl).textContent = isOn ? onText : offText;
+    document.getElementById(statEl).className = 'status-cell-val ' + (isOn ? 'on' : 'off');
+  } catch(e) { console.error(e); }
+}
+
+function systemOn()  {
+  postControl('/system/on',  'stat-system', 'ONLINE', 'OFFLINE', true);
+  document.getElementById('btn-sys-on').classList.add('active');
+  document.getElementById('btn-sys-off').classList.remove('active');
+}
+function systemOff() {
+  postControl('/system/off', 'stat-system', 'ONLINE', 'OFFLINE', false);
+  document.getElementById('btn-sys-off').classList.add('active');
+  document.getElementById('btn-sys-on').classList.remove('active');
+}
+function logOn()  {
+  postControl('/logging/on',  'stat-logging', 'ACTIVE', 'PAUSED', true);
+  document.getElementById('btn-log-on').classList.add('active');
+  document.getElementById('btn-log-off').classList.remove('active');
+}
+function logOff() {
+  postControl('/logging/off', 'stat-logging', 'ACTIVE', 'PAUSED', false);
+  document.getElementById('btn-log-off').classList.add('active');
+  document.getElementById('btn-log-on').classList.remove('active');
+}
+
+initChart();
+setInterval(fetchData, 3000);
+fetchData();
+</script>
+</body>
+</html>
