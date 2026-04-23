@@ -13,7 +13,7 @@ print("Running on Raspberry Pi - sensors active")
     
 EMAIL_ENABLED   = True          
 EMAIL_SENDER    = "mcgillivrayjulia@gmail.com"
-EMAIL_PASSWORD  = "JacksonBuddy-22"   # Gmail App Password 
+EMAIL_PASSWORD  = ""   # Gmail App Password 
 EMAIL_RECIPIENT = "j.kusner@gwmail.gwu.edu"
 
 TEMP_MAX        = 33.0 
