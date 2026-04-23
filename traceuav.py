@@ -22,7 +22,7 @@ print(dir(ADS))
 PORT = 5000
 EMAIL_ENABLED = True
 EMAIL_SENDER = "mcgillivrayjulia@gmail.com"
-EMAIL_PASSWORD = "pmbs qcnm xnmm ccqm"
+EMAIL_PASSWORD = ""
 EMAIL_RECIPIENT = "j.kusner@gwu.edu"
 
 CSV_FILE = "trace-uav-log.csv"
